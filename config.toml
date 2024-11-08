@@ -1,0 +1,14 @@
+[app]
+secrets_dir = "secrets"
+public_key = "secrets/public.pem"
+private_key = "secrets/private.pem"
+
+[server]
+host = ""
+
+[client]
+client_id = "YOUR_CLIENT_ID"
+client_secret = "YOUR_CLIENT_SECRET"
+
+[agent]
+onboard_path = "./secrets/onboard.json"
