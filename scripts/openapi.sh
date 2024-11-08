@@ -5,7 +5,7 @@ APIGEN_PATH=./internal/api
 TOOL=swagger
 
 install() {
-    if command -v ${TOOL} ;then
+    if ! command -v ${TOOL} ;then
         echo "Installing ${TOOL}"
         go install github.com/go-swagger/go-swagger/cmd/swagger@latest
     fi
