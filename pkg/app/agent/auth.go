@@ -20,7 +20,8 @@ type Auther interface {
 	GetCertificate() (*models.TokenKey, error)
 	GetClientIdentifier() *models.ClientIdentifier
 	OnBoard() (*models.ClientIdentifier, error)
-	AquireToken() error
+	AquireToken() (*models.AccessToken, error)
+	GetToken() *models.AccessToken
 }
 
 type Auth struct {
@@ -154,24 +155,16 @@ func (a *Auth) CreateClientAssertion() {
 
 }
 
-func (a *Auth) AquireToken() error {
-	return nil
+func (a *Auth) AquireToken() (*models.AccessToken, error) {
+	return nil, nil
 }
 
-func (a *Auth) RenewSecret() {
-	if a.clientIdentifier != nil && utils.IsExpired(time.Unix(a.clientIdentifier.ClientSecretExpiresAt, 0), time.Now(), a.expirationBuffer) {
-		// TODO use id and secret to renew secret
-	} else {
-		// TODO log warning
-	}
-}
-
-func (a *Auth) RenewToken() {
+func (a *Auth) RenewToken() (*models.AccessToken, error) {
 	if a.accessToken != nil && utils.IsExpired(time.Unix(a.accessToken.ExpiresIn, 0), time.Now(), a.expirationBuffer) {
-		// TODO use secret to renew token
-	} else {
-		// TODO log warning
+		log.Logger.Warn("token will expired, renew token")
+		a.AquireToken()
 	}
+	return a.accessToken, nil
 }
 
 func (a *Auth) GetCertificate() (*models.TokenKey, error) {
@@ -195,8 +188,13 @@ func (a *Auth) GetCertificate() (*models.TokenKey, error) {
 
 func ValidateToken() {}
 
-func GetToken() {
+func (a *Auth) GetToken() *models.AccessToken {
+	if a.accessToken != nil && utils.IsExpired(time.Unix(a.accessToken.ExpiresIn, 0), time.Now(), a.expirationBuffer) {
+		log.Logger.Warn("token will expired, please renew token")
+		return nil
+	}
 
+	return a.accessToken
 }
 
 func SetupAgentCertificate() {}
