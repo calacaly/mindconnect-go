@@ -154,15 +154,6 @@ func (a *Agent) loadStorageConfig() {
 		a.auth.SetClientIdentifier(&cid)
 	}
 
-	var at models.AccessToken
-	err = a.storage.GetConfig(&at)
-	if err != nil {
-		log.Logger.Warn("Oauth", "load access token", err)
-	} else {
-
-		a.auth.SetAccessToken(&at)
-	}
-
 	var pub models.TokenKey
 	err = a.storage.GetConfig(&pub)
 	if err != nil {

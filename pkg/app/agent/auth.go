@@ -91,6 +91,7 @@ func (a *Auth) InitDefaultOauthClientKey() {
 		exp[i] = byte(pub.E >> (uint(i) * 8))
 	}
 
+	//AQAB
 	e := base64.RawURLEncoding.EncodeToString(exp)
 
 	a.oauthPublicJwk = &models.Key{
