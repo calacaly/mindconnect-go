@@ -19,7 +19,6 @@ const (
 const (
 	OnBoardFile          = "onboard.json"
 	ClientIdentifierFile = "client.json"
-	AccessTokenFile      = "access_token.json"
 	OauthPublicKeyFile   = "oauth_public_key.json"
 	PrivateKeyFile       = "private.pem"
 	PublicKeyFile        = "public.pem"
@@ -65,16 +64,6 @@ func (l LocalStorage) GetConfig(config interface{}) error {
 		if err != nil {
 			return err
 		}
-	case *models.AccessToken:
-		path = l.basePath + "/" + AccessTokenFile
-		data, err := os.ReadFile(path)
-		if err != nil {
-			return err
-		}
-		err = cfg.UnmarshalBinary(data)
-		if err != nil {
-			return err
-		}
 	case *models.TokenKey:
 		path = l.basePath + "/" + OauthPublicKeyFile
 		data, err := os.ReadFile(path)
@@ -100,8 +89,6 @@ func (l LocalStorage) Save(data []byte, configType int) error {
 		path = l.basePath + "/" + OnBoardFile
 	case ClientIdentifierType:
 		path = l.basePath + "/" + ClientIdentifierFile
-	case AccessTokenType:
-		path = l.basePath + "/" + AccessTokenFile
 	case OauthPublicKeyType:
 		path = l.basePath + "/" + OauthPublicKeyFile
 	case PrivateKeyType:

@@ -76,14 +76,7 @@ func (a *Agent) Token() (string, error) {
 		return "", err
 	}
 
-	data, err := access.MarshalBinary()
-	if err != nil {
-		return "", err
-	}
-	log.Logger.Info("save access token")
-	err = a.storage.Save(data, store.AccessTokenType)
-	log.Logger.Info("save access token done")
-	return access.AccessToken, err
+	return access.AccessToken, nil
 }
 
 func (a *Agent) Push() error {

@@ -365,6 +365,10 @@ func (a *Auth) GetCertificate() (*models.TokenKey, error) {
 func ValidateToken() {}
 
 func (a *Auth) GetToken() *models.AccessToken {
+	if a.accessToken == nil {
+		log.Logger.Info("token not found, please acquire token")
+		return nil
+	}
 
 	if a.TokenIsExpired() {
 		log.Logger.Warn("token will expired, please renew token")
