@@ -1,3 +1,4 @@
 secrets
 *.jar
 .gdb_history
+mindconnect-go
