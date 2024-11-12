@@ -12,4 +12,9 @@ func main() {
 		log.Logger.Error(err)
 	}
 
+	token, err := as.Token()
+	if err != nil {
+		log.Logger.Error(err)
+	}
+	log.Logger.Info(token)
 }

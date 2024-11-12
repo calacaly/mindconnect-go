@@ -14,4 +14,9 @@ genkey:
 test:
 	go test ./... -v
 
-.PHONY: run genapi test
+debug:
+	rm -rf mindconnect-go
+	go build -gcflags "-N -l" -o mindconnect-go main.go
+	gdb mindconnect-go
+
+.PHONY: run genapi test debug

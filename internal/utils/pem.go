@@ -32,10 +32,62 @@ func PublicKeyLineFromPemFile(path string) (string, error) {
 
 }
 
-func PublicKeyFromPemString(pubstr string) *rsa.PublicKey {
+func PublicKeyFromPemFile(path string) (*rsa.PublicKey, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	block, _ := pem.Decode(data)
+
+	if block == nil || block.Type != "PUBLIC KEY" {
+		return nil, errors.New("invalid public key format")
+	}
+
+	key, err := x509.ParsePKIXPublicKey(block.Bytes)
+
+	if err != nil {
+		return nil, err
+	}
+
+	switch k := key.(type) {
+	case *rsa.PublicKey:
+		return k, nil
+	default:
+		return nil, errors.New("invalid public key format")
+	}
+}
+
+func PrivateKeyFromPemFile(path string) (*rsa.PrivateKey, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+
+	block, _ := pem.Decode(data)
+
+	if block == nil || block.Type != "PRIVATE KEY" {
+		return nil, errors.New("invalid private key format")
+	}
+
+	key, err := x509.ParsePKCS8PrivateKey(block.Bytes)
+
+	if err != nil {
+		return nil, err
+	}
+
+	switch k := key.(type) {
+	case *rsa.PrivateKey:
+		return k, nil
+	default:
+		return nil, errors.New("invalid private key format")
+	}
+
+}
+
+func PublicKeyFromPemString(pubstr string) (*rsa.PublicKey, error) {
 	// 检查是否包含开头和结尾的标记
 	if !strings.HasPrefix(pubstr, startMarker) || !strings.HasSuffix(pubstr, endMarker) {
-		return nil
+		return nil, errors.New("invalid public key format")
 	} else {
 		pubstr = strings.TrimSuffix(pubstr, endMarker)
 		pubstr = strings.TrimPrefix(pubstr, startMarker)
@@ -57,12 +109,17 @@ func PublicKeyFromPemString(pubstr string) *rsa.PublicKey {
 	block, _ := pem.Decode(buffer.Bytes())
 
 	if block == nil || block.Type != "PUBLIC KEY" {
-		return nil
+		return nil, errors.New("invalid public key format")
 	}
 
-	pub, err := x509.ParsePKIXPublicKey(block.Bytes)
+	key, err := x509.ParsePKIXPublicKey(block.Bytes)
 	if err != nil {
-		return nil
+		return nil, err
 	}
-	return pub.(*rsa.PublicKey)
+	switch k := key.(type) {
+	case *rsa.PublicKey:
+		return k, nil
+	default:
+		return nil, errors.New("invalid public key format")
+	}
 }
