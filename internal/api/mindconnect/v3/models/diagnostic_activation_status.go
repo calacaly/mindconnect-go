@@ -22,9 +22,8 @@ type DiagnosticActivationStatus struct {
 
 	// Status of the activation
 	// Example: ACTIVE
-	// Required: true
 	// Enum: ["ACTIVE","INACTIVE"]
-	Status *string `json:"status"`
+	Status string `json:"status,omitempty"`
 }
 
 // Validate validates this diagnostic activation status
@@ -71,13 +70,12 @@ func (m *DiagnosticActivationStatus) validateStatusEnum(path, location string, v
 }
 
 func (m *DiagnosticActivationStatus) validateStatus(formats strfmt.Registry) error {
-
-	if err := validate.Required("status", "body", m.Status); err != nil {
-		return err
+	if swag.IsZero(m.Status) { // not required
+		return nil
 	}
 
 	// value enum
-	if err := m.validateStatusEnum("status", "body", *m.Status); err != nil {
+	if err := m.validateStatusEnum("status", "body", m.Status); err != nil {
 		return err
 	}
 

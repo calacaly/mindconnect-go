@@ -4,17 +4,32 @@ import (
 	"crypto/rsa"
 	"time"
 
-	"github.com/calacaly/mindconnect-go/internal/api/agentmanagement/v3/models"
+	agentclient "github.com/calacaly/mindconnect-go/internal/api/agentmanagement/v3/client"
+	agentmodels "github.com/calacaly/mindconnect-go/internal/api/agentmanagement/v3/models"
 	"github.com/calacaly/mindconnect-go/pkg/log"
 
 	"github.com/calacaly/mindconnect-go/pkg/store"
+	"github.com/go-resty/resty/v2"
 )
 
 var (
-	ServerHost       = "gateway.eu1.mindsphere.io"
-	AgentApiEndPoint = "/api/agentmanagement/v3"
-	SecretPath       = "./secrets"
+	ServerHost = "gateway.eu1.mindsphere.io"
+	SecretPath = "./secrets"
 )
+
+var (
+	agentManagementApi    *agentclient.AgentManagementAPI
+	assetManagementClient *resty.Client
+)
+
+func init() {
+	agentManagementApi = agentclient.NewHTTPClientWithConfig(nil,
+		agentclient.DefaultTransportConfig().WithHost(ServerHost),
+	)
+
+	assetManagementClient = resty.New().
+		SetBaseURL("https://" + ServerHost + "/api/assetmanagement/v3")
+}
 
 type Agent struct {
 	auth    Auther
@@ -24,12 +39,14 @@ type Agent struct {
 type AgentService interface {
 	OnBoard() error
 	Token() (string, error)
+	GetDataSourceConfig(*string) (*agentmodels.DataSourceConfiguration, error)
+	SetDataSourceConfig(*string, *agentmodels.UpdateDataSourceConfigurationRequest) error
 	Push() error
 }
 
 func (a *Agent) OnBoard() error {
 
-	var cid *models.ClientIdentifier
+	var cid *agentmodels.ClientIdentifier
 	var err error
 	if a.IsOnBoarded() {
 		log.Logger.Info("Agent, agent already on boarded")
@@ -100,7 +117,7 @@ func NewAgentWithLocalStorage(secretPath string) AgentService {
 
 func (a *Agent) IsOnBoarded() bool {
 
-	var cid models.ClientIdentifier
+	var cid agentmodels.ClientIdentifier
 	if a.auth.GetClientIdentifier() == nil {
 		err := a.storage.GetConfig(&cid)
 		return err == nil
@@ -112,7 +129,7 @@ func (a *Agent) IsOnBoarded() bool {
 
 func (a *Agent) loadStorageConfig() {
 
-	var oauthPublicKey models.TokenKey
+	var oauthPublicKey agentmodels.TokenKey
 	err := a.storage.GetConfig(&oauthPublicKey)
 	if err != nil {
 		log.Logger.Warn("Agent", "load oauth public key", err)
@@ -139,7 +156,7 @@ func (a *Agent) loadStorageConfig() {
 		}
 	}
 
-	var cfg models.Configuration
+	var cfg agentmodels.Configuration
 	err = a.storage.GetConfig(&cfg)
 	if err != nil {
 		log.Logger.Warn("Agent", "load client configuration error", err)
@@ -147,7 +164,7 @@ func (a *Agent) loadStorageConfig() {
 		log.Logger.Info("Agent", "load client configuration", "successed")
 	}
 
-	var cid models.ClientIdentifier
+	var cid agentmodels.ClientIdentifier
 	err = a.storage.GetConfig(&cid)
 	if err != nil {
 		log.Logger.Warn("Agent", "load client identifier error", err)

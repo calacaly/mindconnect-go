@@ -13,8 +13,6 @@ import (
 	"github.com/calacaly/mindconnect-go/internal/utils"
 	"github.com/calacaly/mindconnect-go/pkg/log"
 	"github.com/calacaly/mindconnect-go/pkg/store"
-	httptransport "github.com/go-openapi/runtime/client"
-	"github.com/go-openapi/strfmt"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 )
@@ -25,6 +23,7 @@ const (
 
 type Auther interface {
 	GetCertificate() (*models.TokenKey, error)
+	GetConfiguration() *models.Configuration
 	GetClientIdentifier() *models.ClientIdentifier
 	OnBoard() (*models.ClientIdentifier, error)
 	NewToken() (*models.AccessToken, error)
@@ -205,6 +204,10 @@ func (a *Auth) GetClientIdentifier() *models.ClientIdentifier {
 	return a.clientIdentifier
 }
 
+func (a *Auth) GetConfiguration() *models.Configuration {
+	return a.configuration
+}
+
 // OnBoard attempts to onboard the client by first checking if the configuration
 // and client identifier are available and valid. If the configuration is missing or expired,
 // appropriate errors are returned. If a client identifier is not found,
@@ -328,17 +331,13 @@ func (a *Auth) AquireToken() (*models.AccessToken, error) {
 		return nil, errors.New("client configuration not found or content is nil")
 	}
 
-	cs := token_operations.New(
-		httptransport.New(ServerHost, AgentApiEndPoint, []string{"https"}),
-		strfmt.Default,
-	)
-
 	clientAssertion := a.CreateClientAssertion()
 	if clientAssertion == nil {
 		return nil, errors.New("client assertion not found")
 	}
 
-	res, err := cs.PostOauthToken(
+	res, err := agentManagementApi.TokenOperations.PostOauthToken(
+
 		token_operations.NewPostOauthTokenParams().
 			WithDefaults().
 			WithGrantType(a.clientIdentifier.GrantTypes[0]).
@@ -398,9 +397,8 @@ func (a *Auth) Register() (*models.ClientIdentifier, error) {
 	default:
 		return nil, errors.New("unsupported client credential profile: " + a.configuration.Content.ClientCredentialProfile[0])
 	}
-	cs := registration_operations.NewClientWithBearerToken(ServerHost, AgentApiEndPoint, "", a.configuration.Content.Iat)
 
-	res, err := cs.PostRegister(
+	res, err := agentManagementApi.RegistrationOperations.PostRegister(
 		registration_operations.NewPostRegisterParams().
 			WithDefaults().
 			WithKeys(oauthKeys),
@@ -425,8 +423,6 @@ func (a *Auth) RegisterUpdate() (*models.ClientIdentifier, error) {
 		return nil, errors.New("client identifier not found")
 	}
 
-	cs := registration_operations.NewClientWithBearerToken(ServerHost, AgentApiEndPoint, "", *a.clientIdentifier.RegistrationAccessToken)
-
 	clientId := string(*a.clientIdentifier.ClientID)
 	var keys *models.RotationKeys
 	switch a.configuration.Content.ClientCredentialProfile[0] {
@@ -443,8 +439,9 @@ func (a *Auth) RegisterUpdate() (*models.ClientIdentifier, error) {
 		return nil, errors.New("unsupported client credential profile: " + a.configuration.Content.ClientCredentialProfile[0])
 	}
 
-	res, err := cs.PutRegisterClientID(
+	res, err := agentManagementApi.RegistrationOperations.PutRegisterClientID(
 		registration_operations.NewPutRegisterClientIDParams().
+			WithAuthorization("Bearer " + *a.clientIdentifier.RegistrationAccessToken).
 			WithDefaults().
 			WithClientID(clientId).
 			WithKeys(keys),
@@ -478,11 +475,7 @@ func (a *Auth) NewClientIdentifier() (*models.ClientIdentifier, error) {
 // Returns the oauth server public key or an error if the request fails.
 func (a *Auth) GetCertificate() (*models.TokenKey, error) {
 
-	cs := token_operations.New(
-		httptransport.New(ServerHost, AgentApiEndPoint, []string{"https"}),
-		strfmt.Default,
-	)
-	res, err := cs.GetOauthTokenKey(
+	res, err := agentManagementApi.TokenOperations.GetOauthTokenKey(
 		token_operations.NewGetOauthTokenKeyParams().
 			WithDefaults(),
 	)

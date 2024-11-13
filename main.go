@@ -16,5 +16,21 @@ func main() {
 	if err != nil {
 		log.Logger.Error(err)
 	}
+
 	log.Logger.Info(token)
+
+	// cfg := agent.CreateDataSourceConfig()
+
+	// err = as.SetDataSourceConfig(&token, cfg)
+	// if err != nil {
+	// 	log.Logger.Error(err)
+	// }
+
+	filter := `{"typeId": "iiotwle6.RobotArm"}`
+
+	assets, err := agent.GetAssetList(&token, filter)
+	if err != nil {
+		log.Logger.Error(err)
+	}
+	log.Logger.Infof("%+v", assets[0])
 }

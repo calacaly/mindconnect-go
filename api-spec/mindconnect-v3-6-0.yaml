@@ -1481,8 +1481,8 @@ definitions:
         example : 'ACTIVE'
   DiagnosticActivationStatus:
     type: object
-    required: 
-      - status
+    required:
+      - agentId
     properties:
       status:
         type: string
