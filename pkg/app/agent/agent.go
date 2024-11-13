@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"crypto/rsa"
 	"time"
 
 	"github.com/calacaly/mindconnect-go/internal/api/agentmanagement/v3/models"
@@ -31,7 +32,7 @@ func (a *Agent) OnBoard() error {
 	var cid *models.ClientIdentifier
 	var err error
 	if a.IsOnBoarded() {
-		log.Logger.Info("Already on boarded")
+		log.Logger.Info("Agent, agent already on boarded")
 
 		cid, err = a.auth.NewClientIdentifier()
 		if err != nil {
@@ -39,11 +40,11 @@ func (a *Agent) OnBoard() error {
 		}
 
 		if cid == nil {
-			log.Logger.Info("client identifier not need to renew")
+			log.Logger.Info("Agent, client identifier not need to renew")
 			return nil
 		}
 	} else {
-		log.Logger.Info("On boarding...")
+		log.Logger.Info("Agent", "agent on board", "ing...")
 		cid, err = a.auth.OnBoard()
 		if err != nil {
 			return err
@@ -55,20 +56,20 @@ func (a *Agent) OnBoard() error {
 		return err
 	}
 
-	log.Logger.Info(" save client identifier")
+	log.Logger.Info("Agent", "save client identifier", "ing...")
 	err = a.storage.Save(data, store.ClientIdentifierType)
-	log.Logger.Info("save client identifier done")
+	log.Logger.Info("Agent", "save client identifier", "done")
 	return err
 }
 
 func (a *Agent) Token() (string, error) {
 	access := a.auth.GetToken()
 	if access != nil {
-		log.Logger.Info("got access token")
+		log.Logger.Info("Agent", "get access token", "successed")
 		return access.AccessToken, nil
 	}
 
-	log.Logger.Info("renew access token")
+	log.Logger.Info("Agent, renew access token")
 
 	access, err := a.auth.NewToken()
 
@@ -110,49 +111,74 @@ func (a *Agent) IsOnBoarded() bool {
 }
 
 func (a *Agent) loadStorageConfig() {
-	log.Logger.Info("get oauth public key")
-	oauthPublicKey, err := a.auth.GetCertificate()
 
-	if err == nil {
-		log.Logger.Info("get oauth public key done")
-		data, err := oauthPublicKey.MarshalBinary()
-		if err != nil {
-			log.Logger.Error("save oauth public key error", err)
-		} else {
-			err = a.storage.Save(data, store.OauthPublicKeyType)
-			if err != nil {
-				log.Logger.Error("save oauth public key error", err)
-			}
-		}
+	var oauthPublicKey models.TokenKey
+	err := a.storage.GetConfig(&oauthPublicKey)
+	if err != nil {
+		log.Logger.Warn("Agent", "load oauth public key", err)
 	} else {
-		log.Logger.Warn("get oauth public key error:" + err.Error())
+		log.Logger.Info("Agent", "load oauth public key", "successed")
 	}
 
-	log.Logger.Info("init oauth client key")
-	a.auth.InitDefaultOauthClientKey()
+	if oauthPublicKey.Value == "" {
+		oauthPublicKey, err := a.auth.GetCertificate()
+
+		if err == nil {
+			log.Logger.Info("Agent", "get oauth public key", "done")
+			data, err := oauthPublicKey.MarshalBinary()
+			if err != nil {
+				log.Logger.Error("Agent", "marshal oauth public key error", err)
+			} else {
+				err = a.storage.Save(data, store.OauthPublicKeyType)
+				if err != nil {
+					log.Logger.Error("Agent", "save oauth public key error", err)
+				}
+			}
+		} else {
+			log.Logger.Warn("Agent", "get oauth public key error", err)
+		}
+	}
 
 	var cfg models.Configuration
 	err = a.storage.GetConfig(&cfg)
 	if err != nil {
-		log.Logger.Warn("Oauth", "load client configuration", err)
+		log.Logger.Warn("Agent", "load client configuration error", err)
 	} else {
-		a.auth.SetConfiguration(&cfg)
+		log.Logger.Info("Agent", "load client configuration", "successed")
 	}
 
 	var cid models.ClientIdentifier
 	err = a.storage.GetConfig(&cid)
 	if err != nil {
-		log.Logger.Warn("Oauth", "load client identifier", err)
+		log.Logger.Warn("Agent", "load client identifier error", err)
 	} else {
-		a.auth.SetClientIdentifier(&cid)
+		log.Logger.Info("Agent", "load client identifier", "successed")
 	}
 
-	var pub models.TokenKey
-	err = a.storage.GetConfig(&pub)
+	var publicKey rsa.PublicKey
+	err = a.storage.GetConfig(&publicKey)
 	if err != nil {
-		log.Logger.Warn("Oauth", "load public key", err)
+		log.Logger.Warn("Agent", "load public key error", err)
 	} else {
-		a.auth.SetOauthPublicKey(&pub)
+		log.Logger.Info("Agent", "load public key", "successed")
 	}
+
+	var privateKey rsa.PrivateKey
+	err = a.storage.GetConfig(&privateKey)
+	if err != nil {
+		log.Logger.Warn("Agent", "load private key error", err)
+	} else {
+		log.Logger.Info("Agent", "load private key", "successed")
+	}
+
+	// auth options
+	a.auth.WithOptions(
+		WithOauthPublicKey(&oauthPublicKey),
+		WithClientIdentifier(&cid),
+		WithConfiguration(&cfg),
+		WithPublicKey(&publicKey),
+		WithPrivateKey(&privateKey),
+		WithDefaultOauthClientKey(),
+	)
 
 }

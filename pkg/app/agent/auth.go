@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"crypto/rsa"
 	"encoding/base64"
 	"errors"
 	"fmt"
@@ -23,17 +24,13 @@ const (
 )
 
 type Auther interface {
-	SetClientIdentifier(clientIdentifier *models.ClientIdentifier)
-	SetConfiguration(configuration *models.Configuration)
-	SetAccessToken(accessToken *models.AccessToken)
-	SetOauthPublicKey(oauthPublicKey *models.TokenKey)
 	GetCertificate() (*models.TokenKey, error)
 	GetClientIdentifier() *models.ClientIdentifier
 	OnBoard() (*models.ClientIdentifier, error)
 	NewToken() (*models.AccessToken, error)
 	NewClientIdentifier() (*models.ClientIdentifier, error)
 	GetToken() *models.AccessToken
-	InitDefaultOauthClientKey()
+	WithOptions(...AuthOptions) Auther
 }
 
 type Auth struct {
@@ -45,6 +42,8 @@ type Auth struct {
 	tokenExpirationAt               time.Time
 	tokenExpirationBuffer           time.Duration
 	clientIdentfierExpirationBuffer time.Duration
+	publickKey                      *rsa.PublicKey
+	privateKey                      *rsa.PrivateKey
 }
 
 type AgentClaims struct {
@@ -53,6 +52,12 @@ type AgentClaims struct {
 	jwt.RegisteredClaims
 }
 
+// NewAgentClaims generates a JWT payload with the given client id, tenant
+// and expiration duration.
+//
+// The payload will include the standard JWT claims (iss, sub, aud, exp, iat, nbf)
+// and the tenant id is included in the "ten" claim.
+// The schemas field is always set to "urn:siemens:mindsphere:v1".
 func NewAgentClaims(clientID, tenant string, expiration time.Duration) AgentClaims {
 	return AgentClaims{
 		Tenant:  tenant,
@@ -69,6 +74,9 @@ func NewAgentClaims(clientID, tenant string, expiration time.Duration) AgentClai
 	}
 }
 
+// NewAuth creates a new instance of the Auth type with the specified token
+// expiration buffer and client identifier expiration buffer. It returns an
+// Auther interface that can be used to manage authentication processes.
 func NewAuth(tokenExpirationBuffer time.Duration, clientIdentifierExpirationBuffer time.Duration) Auther {
 	return &Auth{
 		tokenExpirationBuffer:           tokenExpirationBuffer,
@@ -76,13 +84,102 @@ func NewAuth(tokenExpirationBuffer time.Duration, clientIdentifierExpirationBuff
 	}
 }
 
-func (a *Auth) InitDefaultOauthClientKey() {
-	pub, err := utils.PublicKeyFromPemFile(SecretPath + "/" + store.PublicKeyFile)
+// NewAuthWithOptions returns an instance of the Auth type using the specified
+// token and client identifier expiration buffers, and applies the given options
+// to the instance.
+func NewAuthWithOptions(tokenExpirationBuffer time.Duration, clientIdentifierExpirationBuffer time.Duration, ops ...AuthOptions) Auther {
+	auth := &Auth{
+		tokenExpirationBuffer:           tokenExpirationBuffer,
+		clientIdentfierExpirationBuffer: clientIdentifierExpirationBuffer,
+	}
 
-	if err != nil {
-		log.Logger.Error(err)
+	for _, opt := range ops {
+		opt(auth)
+	}
+	return auth
+}
+
+type AuthOptions func(*Auth)
+
+// WithConfiguration sets the configuration of the agent.
+//
+// This configuration is used to determine the MindSphere environment and the
+// client credential profile.
+func WithConfiguration(configuration *models.Configuration) AuthOptions {
+	return func(a *Auth) {
+		a.configuration = configuration
+	}
+}
+
+// WithClientIdentifier sets the client identifier that will be used by the
+// agent.
+func WithClientIdentifier(clientIdentifier *models.ClientIdentifier) AuthOptions {
+	return func(a *Auth) {
+		a.clientIdentifier = clientIdentifier
+	}
+}
+
+// WithOauthPublicKey sets the public key of the oauth server.
+func WithOauthPublicKey(oauthPublicKey *models.TokenKey) AuthOptions {
+	return func(a *Auth) {
+		a.oauthPublicKey = oauthPublicKey
+	}
+}
+
+// WithDefaultOauthClientKey depend on WithOauthPublicKey, please use WithOauthPublicKey first
+func WithDefaultOauthClientKey() AuthOptions {
+	return func(a *Auth) {
+		a.DefaultOauthClientKey()
+	}
+}
+
+// WithPrivateKey sets the private key for the agent.
+// This key is used for signing operations that require a private key.
+func WithPrivateKey(privateKey *rsa.PrivateKey) AuthOptions {
+	return func(a *Auth) {
+		a.privateKey = privateKey
+	}
+}
+
+// WithPublicKey sets the public key of the agent.
+//
+// This key is used to create the jwk for the oauth client key. The jwk is
+// created by encoding the modulus (n) and exponent (e) of the public key
+// in base64url. The jwk is then stored in oauthPublicJwk and can be used
+// to register the client at the agent management api.
+func WithPublicKey(publicKey *rsa.PublicKey) AuthOptions {
+	return func(a *Auth) {
+		a.publickKey = publicKey
+	}
+}
+
+// WithOptions applies the given options to the Auth object.
+//
+// The options are applied in the order they are given.
+//
+// WithOptions returns the modified Auth object.
+func (a *Auth) WithOptions(opts ...AuthOptions) Auther {
+	for _, opt := range opts {
+		opt(a)
+	}
+	return a
+}
+
+// DefaultOauthClientKey creates a default jwk key for the oauth client.
+//
+// This is required for the oauth client registration.
+//
+// The jwk is created by encoding the modulus (n) and exponent (e) of the
+// public key in base64url. The jwk is then stored in oauthPublicJwk and
+// can be used to register the client at the agent management api.
+//
+// The key type is always RSA and the key id is always "key-1".
+func (a *Auth) DefaultOauthClientKey() {
+	if a.publickKey == nil {
+		log.Logger.Warn("Oauth, public key not found")
 		return
 	}
+	pub := a.publickKey
 	kty := "RSA"
 	kid := "key-1"
 	n := base64.RawURLEncoding.EncodeToString(pub.N.Bytes())
@@ -102,26 +199,17 @@ func (a *Auth) InitDefaultOauthClientKey() {
 	}
 }
 
-func (a *Auth) SetConfiguration(configuration *models.Configuration) {
-	a.configuration = configuration
-}
-
-func (a *Auth) SetClientIdentifier(clientIdentifier *models.ClientIdentifier) {
-	a.clientIdentifier = clientIdentifier
-}
-
-func (a *Auth) SetAccessToken(accessToken *models.AccessToken) {
-	a.accessToken = accessToken
-}
-
-func (a *Auth) SetOauthPublicKey(oauthPublicKey *models.TokenKey) {
-	a.oauthPublicKey = oauthPublicKey
-}
-
+// GetClientIdentifier returns the client identifier that has been stored in the
+// agent's file system on successful onboarding or registration.
 func (a *Auth) GetClientIdentifier() *models.ClientIdentifier {
 	return a.clientIdentifier
 }
 
+// OnBoard attempts to onboard the client by first checking if the configuration
+// and client identifier are available and valid. If the configuration is missing or expired,
+// appropriate errors are returned. If a client identifier is not found,
+// it attempts to register and obtain a new one. If the existing client identifier is expired,
+// it attempts to renew it. Returns the client identifier on success or an error if onboarding fails.
 func (a *Auth) OnBoard() (*models.ClientIdentifier, error) {
 
 	if a.configuration == nil {
@@ -142,15 +230,20 @@ func (a *Auth) OnBoard() (*models.ClientIdentifier, error) {
 	}
 	// renew client identifier
 	if a.clientIdentifier != nil && a.ClientIdentifierIsExpired() {
-		log.Logger.Warn("client identifier will expired, renew it")
+		log.Logger.Warn("Oauth, client identifier will expired, renew it")
 		return a.NewClientIdentifier()
 	}
 
 	return nil, errors.New("client configuration not found or content is nil")
 }
 
-func RotateKey() {}
-
+// CreateClientAssertion generates a client assertion as a JWT token based on the client identifier.
+// It requires the client identifier and the oauth server public key to be set.
+// The client assertion is used to authenticate the client with the oauth server in the token endpoint.
+// The client assertion is generated according to the client credential profile set in the configuration.
+// If the client credential profile is SHARED_SECRET, the client assertion is signed with the client secret.
+// If the client credential profile is RSA_3072, the client assertion is signed with the client private key.
+// If the client credential profile is not supported, an error is returned.
 func (a *Auth) CreateClientAssertion() *string {
 
 	serverPublicKey, err := utils.PublicKeyFromPemString(a.oauthPublicKey.Value)
@@ -173,17 +266,17 @@ func (a *Auth) CreateClientAssertion() *string {
 	}
 
 	if !token.Valid {
-		log.Logger.Error("Oauth --> jwt.Parse token is not valid")
+		log.Logger.Error("Oauth", "jwt parse error", "token is not valid")
 		return nil
 	}
 
 	tenant := token.Claims.(jwt.MapClaims)["ten"]
 	if tenant == nil {
-		log.Logger.Error("Oauth --> jwt.Claims tenant is nil")
+		log.Logger.Error("Oauth, jwt parse error", "claims tenant is nil")
 		return nil
 	}
 
-	log.Logger.Info("Oauth --> jwt.Parse successed")
+	log.Logger.Info("Oauth", "jwt parse", "successed")
 
 	claims := NewAgentClaims(string(*a.clientIdentifier.ClientID), tenant.(string), time.Minute*30)
 
@@ -210,15 +303,26 @@ func (a *Auth) CreateClientAssertion() *string {
 			return nil
 		}
 	default:
-		log.Logger.Error("unsupported client credential profile: " + a.configuration.Content.ClientCredentialProfile[0])
+		log.Logger.Error("Oauth", "unsupported client credential profile", a.configuration.Content.ClientCredentialProfile[0])
 		return nil
 	}
 
-	log.Logger.Info("Oatuh --> client jwt generated")
+	log.Logger.Info("Oatuh", "create client assertion", "successed")
 
 	return &assertion
 }
 
+// AquireToken sends a request to the MindSphere agent management service to obtain
+// a new access token using the client assertion.
+//
+// The client assertion is generated by the CreateClientAssertion method using the
+// client identifier and the oauth public key which are stored in the agent's
+// file system on successful onboarding.
+//
+// The obtained access token is stored in the agent and can be accessed using the
+// GetToken method.
+//
+// Returns the access token or an error if the request fails.
 func (a *Auth) AquireToken() (*models.AccessToken, error) {
 	if a.oauthPublicKey == nil || a.clientIdentifier == nil {
 		return nil, errors.New("client configuration not found or content is nil")
@@ -254,10 +358,26 @@ func (a *Auth) AquireToken() (*models.AccessToken, error) {
 	return res.Payload, nil
 }
 
+// NewToken requests a new access token using the client assertion.
+//
+// The client assertion is generated based on the client identifier and the oauth server
+// public key. The obtained access token is stored in the agent and can be accessed using
+// the GetToken method.
+//
+// Returns the access token or an error if the request fails.
 func (a *Auth) NewToken() (*models.AccessToken, error) {
 	return a.AquireToken()
 }
 
+// Register registers the agent with the agent management service.
+//
+// The agent is registered using the client credential profile specified in the
+// configuration. If the client credential profile is not supported, an error is returned.
+//
+// The obtained client identifier is stored in the agent and can be accessed using
+// the GetClientIdentifier method.
+//
+// Returns the client identifier or an error if the registration fails.
 func (a *Auth) Register() (*models.ClientIdentifier, error) {
 	var oauthKeys *models.Keys
 	switch a.configuration.Content.ClientCredentialProfile[0] {
@@ -294,6 +414,12 @@ func (a *Auth) Register() (*models.ClientIdentifier, error) {
 	return res.Payload, nil
 }
 
+// RegisterUpdate sends a request to the MindSphere agent management service to update the client identifier.
+//
+// The updated client identifier is stored in the agent and can be accessed using
+// the GetClientIdentifier method.
+//
+// Returns the updated client identifier or an error if the registration update fails.
 func (a *Auth) RegisterUpdate() (*models.ClientIdentifier, error) {
 	if a.clientIdentifier == nil {
 		return nil, errors.New("client identifier not found")
@@ -335,14 +461,21 @@ func (a *Auth) RegisterUpdate() (*models.ClientIdentifier, error) {
 
 }
 
+// NewClientIdentifier renews the client identifier if it is expired.
+//
+// Returns the renewed client identifier or an error if the renewal fails.
+// If the client identifier is not expired, it returns nil without error.
 func (a *Auth) NewClientIdentifier() (*models.ClientIdentifier, error) {
 	if a.clientIdentifier != nil && a.ClientIdentifierIsExpired() {
-		log.Logger.Warn("client identifier will expired, renew it")
+		log.Logger.Warn("Oauth, client identifier will expired, renew it")
 		return a.RegisterUpdate()
 	}
 	return nil, nil
 }
 
+// GetCertificate gets the oauth server public key.
+//
+// Returns the oauth server public key or an error if the request fails.
 func (a *Auth) GetCertificate() (*models.TokenKey, error) {
 
 	cs := token_operations.New(
@@ -354,7 +487,6 @@ func (a *Auth) GetCertificate() (*models.TokenKey, error) {
 			WithDefaults(),
 	)
 	if err != nil {
-		log.Logger.Warn("OauthPubKey --> get server pubkey falied")
 		return nil, err
 	}
 	a.oauthPublicKey = res.Payload
@@ -362,30 +494,53 @@ func (a *Auth) GetCertificate() (*models.TokenKey, error) {
 	return res.Payload, nil
 }
 
-func ValidateToken() {}
-
+// GetToken returns the access token obtained from the agent management service.
+//
+// If the access token is not found, it returns nil and logs a message.
+// If the access token is expired, it returns nil and logs a message.
+// Otherwise, it returns the access token.
 func (a *Auth) GetToken() *models.AccessToken {
 	if a.accessToken == nil {
-		log.Logger.Info("token not found, please acquire token")
+		log.Logger.Info("Oauth, token not found, please acquire token")
 		return nil
 	}
 
 	if a.TokenIsExpired() {
-		log.Logger.Warn("token will expired, please renew token")
+		log.Logger.Warn("Oauth, token will expired, please renew token")
 		return nil
 	}
 
 	return a.accessToken
 }
 
+// ClientIdentifierIsExpired determines if the client identifier is expired when
+// considering the current time and an additional expiration buffer.
+//
+// The expiration buffer is a duration subtracted from the client identifier
+// expiration time to determine the effective expiration time. This is useful
+// for avoiding expiration race conditions due to clock skew.
+//
+// Returns true if the client identifier is expired, false otherwise.
 func (a *Auth) ClientIdentifierIsExpired() bool {
 	return utils.IsExpired(time.Unix(a.clientIdentifier.ClientSecretExpiresAt, 0), time.Now(), a.clientIdentfierExpirationBuffer)
 }
 
+// ConfigurationIsExpired determines if the agent configuration is expired when
+// considering the current time.
+//
+// Returns true if the configuration is expired, false otherwise.
 func (a *Auth) ConfigurationIsExpired() bool {
 	return utils.IsExpired(time.Time(a.configuration.Expiration), time.Now(), 0)
 }
 
+// TokenIsExpired determines if the access token is expired when
+// considering the current time and an additional expiration buffer.
+//
+// The expiration buffer is a duration subtracted from the token expiration time
+// to determine the effective expiration time. This is useful for avoiding
+// expiration race conditions due to clock skew.
+//
+// Returns true if the access token is expired, false otherwise.
 func (a *Auth) TokenIsExpired() bool {
 	return utils.IsExpired(a.tokenExpirationAt, time.Now(), a.tokenExpirationBuffer)
 }

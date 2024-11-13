@@ -1,10 +1,12 @@
 package store
 
 import (
+	"crypto/rsa"
 	"errors"
 	"os"
 
 	"github.com/calacaly/mindconnect-go/internal/api/agentmanagement/v3/models"
+	"github.com/calacaly/mindconnect-go/internal/utils"
 )
 
 const (
@@ -33,13 +35,30 @@ type StorageClass interface {
 	Save([]byte, int) error
 }
 
+// NewLocalStorage creates a new LocalStorage object with the given base path.
+//
+// The method returns the newly created LocalStorage object.
 func NewLocalStorage(basePath string) StorageClass {
 	return &LocalStorage{
 		basePath: basePath,
 	}
 }
 
-// config *models.xxx
+// GetConfig reads a file associated with the given config interface{} and
+// decodes its content into the config interface{}. The method returns an error
+// if the file could not be read or the content could not be decoded.
+//
+// The method requires the basePath to be set.
+//
+// The method supports the following config interfaces{}:
+//
+// *models.ClientIdentifier
+// *models.Configuration
+// *models.TokenKey
+// *rsa.PrivateKey
+// *rsa.PublicKey
+//
+// For any other config interface{}, an error is returned.
 func (l LocalStorage) GetConfig(config interface{}) error {
 	var path string
 
@@ -74,6 +93,20 @@ func (l LocalStorage) GetConfig(config interface{}) error {
 		if err != nil {
 			return err
 		}
+	case *rsa.PrivateKey:
+		path = l.basePath + "/" + PrivateKeyFile
+		data, err := utils.PrivateKeyFromPemFile(path)
+		if err != nil {
+			return err
+		}
+		*cfg = *data
+	case *rsa.PublicKey:
+		path = l.basePath + "/" + PublicKeyFile
+		data, err := utils.PublicKeyFromPemFile(path)
+		if err != nil {
+			return err
+		}
+		*cfg = *data
 	default:
 		return errors.New("unsupported config type")
 	}
@@ -81,6 +114,12 @@ func (l LocalStorage) GetConfig(config interface{}) error {
 	return nil
 }
 
+// Save writes the given data to the local storage file
+// that is associated with the given configType.
+//
+// The method returns an error if the file could not be written.
+//
+// The method requires the basePath to be set.
 func (l LocalStorage) Save(data []byte, configType int) error {
 
 	var path string
